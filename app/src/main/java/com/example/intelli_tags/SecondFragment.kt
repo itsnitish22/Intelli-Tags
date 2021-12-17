@@ -39,6 +39,7 @@ class SecondFragment : Fragment() {
     lateinit var exampleFile: File
     private var imageUri: Uri? = null
     override fun onCreateView(
+
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
