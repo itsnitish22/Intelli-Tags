@@ -57,6 +57,8 @@ class SecondFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
 
+
+
     ): View? {
         viewOfLayout2nd = inflater.inflate(R.layout.fragment_second, container, false)
         ai = viewOfLayout2nd.context.packageManager
