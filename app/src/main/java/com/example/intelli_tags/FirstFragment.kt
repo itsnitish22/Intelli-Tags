@@ -17,6 +17,9 @@ import kotlinx.android.synthetic.main.fragment_first.view.*
 import org.json.JSONObject
 import java.lang.StringBuilder
 import android.content.ClipData
+import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.widget.ProgressBar
 import kotlinx.android.synthetic.main.fragment_first.*
 
@@ -24,36 +27,72 @@ class FirstFragment : Fragment(R.layout.fragment_first) {
 
     lateinit var viewOfLayout: View
     lateinit var progressBar: ProgressBar
+    lateinit var ai: ApplicationInfo
+    private lateinit var output: StringBuilder
+    private lateinit var response: String
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
         viewOfLayout = inflater.inflate(R.layout.fragment_first, container, false)
-        progressBar=viewOfLayout.findViewById(R.id.progressBar)
-        progressBar.visibility = View.GONE
-        viewOfLayout.button.setOnClickListener {
-            val text = viewOfLayout.TextInputEditText.text.toString()
-            //prgress bar
-//            progressBar = viewOfLayout.findViewById(R.id.progressBar)
-            progressBar.visibility = View.VISIBLE
-            processText(text)
+
+//        Declaring Application Info to retrieve and use the API Keys
+        ai = viewOfLayout.context.packageManager
+            .getApplicationInfo(viewOfLayout.context.packageName, PackageManager.GET_META_DATA)
+
+        progressBar = viewOfLayout.findViewById(R.id.progressBar)
+
+//        If search button is clicked
+        viewOfLayout.searchTags.setOnClickListener {
+            val text = viewOfLayout.TextInput.text.toString()
+            if (text == "")
+                Toast.makeText(viewOfLayout.context, "Please put a valid input", Toast.LENGTH_SHORT)
+                    .show()
+            else {
+                progressBar.visibility = View.VISIBLE
+                viewOfLayout.searchTags.isEnabled = false
+                viewOfLayout.copyButton.isEnabled = false
+                viewOfLayout.shareButton.isEnabled = false
+                processText(text)
+            }
         }
+
+//        If copy to clipboard button is clicked
+        viewOfLayout.copyButton.setOnClickListener {
+            val text = viewOfLayout.TextInput.text.toString()
+            if (text == "")
+                Toast.makeText(viewOfLayout.context, "Please put a valid input", Toast.LENGTH_SHORT)
+                    .show()
+            else if (resultTopics.text == "")
+                Toast.makeText(viewOfLayout.context, "Generate the tags!", Toast.LENGTH_SHORT)
+                    .show()
+            else
+                copy_to_clipboard(output.toString())
+        }
+
+//        If share button is clicked
+        viewOfLayout.shareButton.setOnClickListener {
+            val text = viewOfLayout.TextInput.text.toString()
+            if (text == "")
+                Toast.makeText(viewOfLayout.context, "Please put a valid input", Toast.LENGTH_SHORT)
+                    .show()
+            else if (resultTopics.text == "")
+                Toast.makeText(viewOfLayout.context, "Generate the tags!", Toast.LENGTH_SHORT)
+                    .show()
+            else
+                shareText(output.toString())
+        }
+
         return viewOfLayout
     }
 
-    //function to copy the text to clipboard
-    private fun copy_to_clipboard(topics: String) {
-        val textToCopy = topics
-        val clipboard =
-            getSystemService(requireContext(), ClipboardManager::class.java) as ClipboardManager
-        val clip = ClipData.newPlainText("label", textToCopy)
-        clipboard!!.setPrimaryClip(clip)
-    }
-
+    //    Function to process the text and create a job-id
     fun processText(text: String) {
 
         val url = "https://app.modzy.com/api/jobs"
+
         val body = JSONObject()
         val body2 = JSONObject()
         body2.put("identifier", "m8z2mwe3pt")
@@ -73,28 +112,22 @@ class FirstFragment : Fragment(R.layout.fragment_first) {
         Log.i("body", body.toString())
 
         val queue = Volley.newRequestQueue(viewOfLayout.context)
-        var response = ""
         val req = object : JsonObjectRequest(
             Method.POST, url, body,
             {
                 response = it.getString("jobIdentifier")
-//                Handler().postDelayed({ getTopics(response) }, 3000)
+                getStatus()
 
-                getStatus(response)
-
-                Log.i("identifier", response)
-                Toast.makeText(requireContext(), "Api Call success", Toast.LENGTH_SHORT).show()
-
-            }, {
-                Toast.makeText(requireContext(), "Api Call Failed", Toast.LENGTH_SHORT).show()
+                Log.i("Text-Topic Modelling Job-Id", response)
+            },
+            {
+                Toast.makeText(requireContext(), "Operation Failed", Toast.LENGTH_SHORT).show()
                 Log.i("status code", it.message.toString())
             }) {
             override fun getHeaders(): MutableMap<String, String> {
                 val headerMap = mutableMapOf<String, String>()
-                headerMap["Authorization"] = "ApiKey KSQslWseSzQ3hfcWeC0A.lMIZQC7rTsApVTnDeArW"
+                headerMap["Authorization"] = "ApiKey ${ai.metaData["ModzyAPIKey"]}"
                 headerMap["Content-Type"] = "application/json"
-                headerMap["Accept"] = "application/json"
-                headerMap["User-Agent"] = "PostmanRuntime/7.28.4"
                 return headerMap
             }
         }
@@ -102,7 +135,7 @@ class FirstFragment : Fragment(R.layout.fragment_first) {
     }
 
     //    Function to check if job is completed
-    private fun getStatus(response: String) {
+    private fun getStatus() {
         var outputText = ""
         val queue2 = Volley.newRequestQueue(viewOfLayout.context)
         val req = object : JsonObjectRequest(
@@ -110,26 +143,36 @@ class FirstFragment : Fragment(R.layout.fragment_first) {
             {
                 outputText = it.getString("status")
 
-//                Checking job status every 10 sec
+//                Checking job status every 0.5 sec
                 Handler().postDelayed({
-                    if (outputText == "COMPLETED")
-                    {
-
-//                        sending job id to extract the caption
-                        getTopics(response)}
-                    else
-                        getStatus(response)
+                    if (outputText == "COMPLETED") {
+                        if (it.getString("failed").equals("1"))
+                        {
+                            Toast.makeText(
+                                viewOfLayout.context,
+                                "Enter a valid text",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            progressBar.visibility=View.GONE
+                            viewOfLayout.searchTags.isEnabled = true
+                            viewOfLayout.copyButton.isEnabled = true
+                            viewOfLayout.shareButton.isEnabled = true
+                        }
+                        else
+//                        sending job id to extract the topics
+                            getTopics(response)
+                    } else
+                        getStatus()
                 }, 500)
 
             }, {
+                Toast.makeText(requireContext(), "Operation Failed", Toast.LENGTH_SHORT).show()
                 Log.i("Job Status Failed", it.message.toString())
             }) {
             override fun getHeaders(): MutableMap<String, String> {
                 val headerMap = mutableMapOf<String, String>()
-                headerMap["Authorization"] = "ApiKey KSQslWseSzQ3hfcWeC0A.lMIZQC7rTsApVTnDeArW"
+                headerMap["Authorization"] = "ApiKey ${ai.metaData["ModzyAPIKey"]}"
                 headerMap["Content-Type"] = "application/json"
-                headerMap["Accept"] = "application/json"
-                headerMap["User-Agent"] = "PostmanRuntime/7.28.4"
                 return headerMap
             }
         }
@@ -147,32 +190,56 @@ class FirstFragment : Fragment(R.layout.fragment_first) {
                 val topics = (it.getJSONObject("results")).getJSONObject("my-input")
                     .getJSONArray("results.json")
                 Log.i("topics", topics.toString())
-                var output = StringBuilder()
+
+                output = StringBuilder()
                 for (i in 0 until topics.length())
                     output.append("#").append(topics[i]).append(" ")
+
                 //progress bar stops
                 progressBar.visibility = View.GONE
+                viewOfLayout.searchTags.isEnabled = true
+                viewOfLayout.copyButton.isEnabled = true
+                viewOfLayout.shareButton.isEnabled = true
                 Log.i("topics", output.toString())
                 viewOfLayout.findViewById<TextView>(R.id.resultTopics).text = output
-                viewOfLayout.copy.setOnClickListener {
-                    copy_to_clipboard(output.toString())
-                }
-                Toast.makeText(requireContext(), "Api Call success", Toast.LENGTH_SHORT).show()
 
             }, {
-                Toast.makeText(requireContext(), "Api Call Failed second", Toast.LENGTH_SHORT)
+                Toast.makeText(requireContext(), "Operation Failed", Toast.LENGTH_SHORT)
                     .show()
                 Log.i("status code", it.message.toString())
             }) {
             override fun getHeaders(): MutableMap<String, String> {
                 val headerMap = mutableMapOf<String, String>()
-                headerMap["Authorization"] = "ApiKey KSQslWseSzQ3hfcWeC0A.lMIZQC7rTsApVTnDeArW"
+                headerMap["Authorization"] = "ApiKey ${ai.metaData["ModzyAPIKey"]}"
                 headerMap["Content-Type"] = "application/json"
-                headerMap["Accept"] = "application/json"
-                headerMap["User-Agent"] = "PostmanRuntime/7.28.4"
                 return headerMap
             }
         }
         queue2.add(req)
     }
+
+
+    //share button implementation
+    private fun shareText(topicsToShare: String) {
+        val intent = Intent(Intent.ACTION_SEND)
+        intent.type = "text/plain"
+        intent.putExtra(
+            Intent.EXTRA_TEXT,
+            "Tags are:\n$topicsToShare"
+        )
+        val chooser = Intent.createChooser(intent, "Share Via")
+        startActivity(chooser)
+    }
+
+    //function to copy the text to clipboard
+    private fun copy_to_clipboard(topics: String) {
+        val textToCopy = topics
+        val clipboard =
+            getSystemService(requireContext(), ClipboardManager::class.java) as ClipboardManager
+        val clip = ClipData.newPlainText("label", textToCopy)
+        clipboard!!.setPrimaryClip(clip)
+        Toast.makeText(viewOfLayout.context, "Copied to Clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+
 }
